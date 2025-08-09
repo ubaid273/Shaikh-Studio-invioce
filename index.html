@@ -106,6 +106,7 @@
       <div class="controls">
         <button class="btn btn-primary" id="addItemBtn">Add Item</button>
         <button class="btn btn-ghost" id="printBtn">Print</button>
+        <button class="btn btn-ghost" id="saveBtn">Save Invoice</button>
         <button class="btn btn-ghost" id="clearBtn">Clear</button>
         <input type="file" accept="image/*" id="logoInput" class="file-input"/>
         <input type="text" id="shopInput" placeholder="Shop name (SHAIKH STUDIO)" />
@@ -122,9 +123,10 @@
   </div>
 
   <script>
+    // --- basic functions & UI ---
     document.getElementById('invoiceDate').textContent = new Date().toLocaleDateString('en-GB');
     let invoiceCounter = 1;
-    function format(num){return Number(num||0).toFixed(2)}
+    function format(num){ return Number(num||0).toFixed(2) }
 
     function addRow(desc='', qty=1, unit=0){
       const tbody = document.getElementById('itemsBody');
@@ -199,6 +201,173 @@
       if(name) document.getElementById('shopName').textContent = name;
     });
 
+    // --- Save Invoice as a complete static HTML snapshot ---
+    document.getElementById('saveBtn').addEventListener('click', ()=>{
+      // Collect header info
+      const shopName = document.getElementById('shopName').textContent.trim();
+      const invoiceNo = document.getElementById('invoiceNo').textContent.trim();
+      const invoiceDate = document.getElementById('invoiceDate').textContent.trim();
+      const customerName = document.getElementById('customerName').value.trim();
+      const customerPhone = document.getElementById('customerPhone').value.trim();
+      const remarks = document.getElementById('remarks').value.trim();
+      const discount = Number(document.getElementById('discount').value||0);
+
+      // Collect logo (if image uploaded use its src, otherwise show text)
+      let logoHTML = document.getElementById('logoPreview').innerHTML;
+      // If logo contains an <img>, keep it; otherwise render the text inside a div
+      if(!/img/i.test(logoHTML)){
+        // sanitize small text fallback
+        const txt = document.getElementById('logoPreview').textContent.trim() || '';
+        logoHTML = `<div style="width:88px;height:88px;border-radius:8px;background:#eee;display:flex;align-items:center;justify-content:center;font-weight:700">${escapeHtml(txt)}</div>`;
+      }
+
+      // Build items rows from current table
+      const rows = [...document.querySelectorAll('#itemsBody tr')];
+      let itemsRowsHTML = '';
+      let subtotal = 0;
+      rows.forEach(r=>{
+        const desc = escapeHtml(r.querySelector('.item-desc').value || '');
+        const qty = Number(r.querySelector('.item-qty').value||0);
+        const unit = Number(r.querySelector('.item-unit').value||0);
+        const total = qty * unit;
+        subtotal += total;
+        itemsRowsHTML += `
+          <tr>
+            <td class="left">${desc}</td>
+            <td class="center">${qty}</td>
+            <td class="center">${format(unit)}</td>
+            <td class="right">${format(total)}</td>
+          </tr>
+        `;
+      });
+
+      const grand = Math.max(subtotal - discount, 0);
+
+      // Full HTML content for the saved file (styles inlined so it looks the same)
+      const savedHTML = `<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Invoice - ${escapeHtml(invoiceNo)}</title>
+<style>
+:root{--accent:#1f8dd6;--muted:#666}
+body{font-family: Arial, sans-serif;margin:0;padding:20px;background:#f4f6f9;color:#111}
+.container{max-width:900px;margin:0 auto;background:#fff;padding:18px;border-radius:10px;box-shadow:0 6px 20px rgba(20,30,40,.08)}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
+.brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo{width:88px;height:88px;border-radius:8px;background:#eee;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.logo img{width:100%;height:100%;object-fit:contain}
+h1{margin:0;font-size:20px}
+.meta{text-align:left}
+label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px}
+.table-wrapper{overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin-top:14px}
+th,td{padding:10px;border-bottom:1px solid #eee}
+th{background:#fafbfd;font-weight:700}
+tfoot td{font-weight:800}
+.right{text-align:right}
+.center{text-align:center}
+.left{text-align:left}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+@media print{ body{background:transparent} .container{box-shadow:none;border-radius:0;padding:0} }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo">${logoHTML}</div>
+        <div>
+          <h1>${escapeHtml(shopName)}</h1>
+          <div class="muted small">Cloth Store</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="small muted">Invoice #: ${escapeHtml(invoiceNo)}</div>
+        <div class="small muted">Date: ${escapeHtml(invoiceDate)}</div>
+      </div>
+    </header>
+
+    <section class="row" style="margin-bottom:8px">
+      <div class="col">
+        <label>Bill To (Customer Name)</label>
+        <div>${escapeHtml(customerName)}</div>
+      </div>
+      <div class="col">
+        <label>Phone</label>
+        <div>${escapeHtml(customerPhone)}</div>
+      </div>
+    </section>
+
+    <section>
+      <label>Items</label>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th class="left">Description</th>
+              <th class="center">Quantity</th>
+              <th class="center">Unit Price</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRowsHTML || `<tr><td colspan="4" class="center muted small">No items</td></tr>`}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" class="right">Subtotal</td>
+              <td class="right">${format(subtotal)}</td>
+            </tr>
+            <tr>
+              <td colspan="3" class="right">Discount</td>
+              <td class="right">${format(discount)}</td>
+            </tr>
+            <tr>
+              <td colspan="3" class="right">Grand Total</td>
+              <td class="right">${format(grand)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div style="margin-top:18px">
+        <label>Remarks</label>
+        <div>${escapeHtml(remarks)}</div>
+      </div>
+
+      <div class="muted small" style="margin-top:12px">Generated by Shaikh Studio Invoice • Customer copy</div>
+    </section>
+  </div>
+</body>
+</html>`;
+
+      // Create blob + download
+      const blob = new Blob([savedHTML], {type: 'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Invoice-${invoiceNo.replace(/\s+/g,'_')}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    // small helper to escape HTML content
+    function escapeHtml(str){
+      if(!str) return '';
+      return String(str)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+
+    // initial demo row
     addRow('Cloth',1,500);
     document.addEventListener('keydown', (e)=>{ if(e.ctrlKey && e.key==='Enter') addRow(); });
     recalc();
